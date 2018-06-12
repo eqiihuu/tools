@@ -1,4 +1,4 @@
-
+import openpyxl
 
 def read_word_vector(file_path):
     '''
@@ -38,6 +38,38 @@ def write_word_vector(words, labels, n_clusters, n_words):
         file.close()
 
 
+def read_excel(file_path):
+    wb = openpyxl.load_workbook(file_path)
+    a_sheet = wb.get_sheet_by_name('Sheet1')
+    pair_list = []
+    for i in range(1, 51):
+        cell = a_sheet.cell(row=i, column=1).value.split('\n\n')
+        pair = {'questions': cell[1].split('\n'),
+                'answer': cell[2]}
+        pair_list.append(pair)
+    return pair_list
+
+
+def write_excel(pair_list, save_path):
+    num = len(pair_list)
+    wb = openpyxl.Workbook()
+    wb.create_sheet('Sheet1', index=0)
+    sheet = wb.get_sheet_by_name('Sheet1')
+    sheet.title = 'Sheet1'
+    row = ['ID', 'Answer', 'Category', 'Keywords', 'From date', 'To date', 'Question', 'Question', 'More Questions']
+    sheet.append(row)
+    for i in range(2, num+2):
+        pair = pair_list[i-2]
+        row = [i-1, pair['answer'], '', '', '', '', pair['questions'][0], '']
+        if len(pair['questions']) > 1:
+            row[7] = pair['questions'][1]
+        sheet.append(row)
+    wb.save(save_path)
+
+
 if __name__ == '__main__':
-    file_path = './data/popIn_entity_vector.model.txt'
-    read_word_vector(file_path)
+    file_path = './data/faq_origin.xlsx'
+    save_path = './result/faq_pairs.xlsx'
+    # read_word_vector(file_path)
+    pair_list = read_excel(file_path)
+    write_excel(pair_list, save_path)
