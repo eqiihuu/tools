@@ -10,10 +10,10 @@ clib = ctypes.cdll.LoadLibrary("./clib.so")
 
 
 class Matrix(object):
-    def __init__(self, data_fixed, col_headers, glob_min, glob_range):
+    def __init__(self, data_fixed, col_headers, glob_min, glob_range, num_rows):
         data_type = np.ctypeslib.ndpointer(dtype=np.uint8)  # flags='c_contiguous'
         header_type = np.ctypeslib.ndpointer(dtype=np.uint16)
-        clib.Matrix_new.argtypes = [data_type, header_type, ctypes.c_float, ctypes.c_float]
+        clib.Matrix_new.argtypes = [data_type, header_type, ctypes.c_float, ctypes.c_float, ctypes.c_int]
         clib.Matrix_new.restype = ctypes.c_void_p
 
         ans_type = ctypes.POINTER(ctypes.c_float)
@@ -21,7 +21,7 @@ class Matrix(object):
         clib.Matrix_decompress.argtypes = [ctypes.c_void_p, ans_type]
         clib.Matrix_decompress.restype = None
 
-        self.obj = clib.Matrix_new(data_fixed, col_headers, glob_min, glob_range)
+        self.obj = clib.Matrix_new(data_fixed, col_headers, glob_min, glob_range, num_rows)
 
     def decompress(self, ans):
         clib.Matrix_decompress(self.obj, ans)
@@ -99,7 +99,7 @@ def read_compressed_mat_c(f):
     col_headers = np.frombuffer(f.read(cols * 4 * 2), dtype=np.uint16, count=cols*4)
     data = np.frombuffer(f.read(cols * rows), dtype=np.uint8, count=cols * rows)
 
-    m = Matrix(data, col_headers, globmin, globrange)
+    m = Matrix(data, col_headers, globmin, globrange, rows)
     mat = (ctypes.c_float*(cols*rows))()
     # mat = np.zeros((cols*rows,), dtype=np.float32)
 
@@ -205,15 +205,59 @@ def read_block(f, start, end):
     return label, feature
 
 
-# def read_block_c(f, start, end):
-#     f.seek(start)
-#     binary = f.read(2).decode()
-#     assert (binary == '\0B')
-#     nnet = f.read(13).decode()
-#     assert (nnet == '<NnetExample>')
-#     label = read_label(f)
-#     feature_binary = f.read(end-f.tell()).split('<SpkInfo>')[0]
-#     return label, feature_binary
+def read_block_binary(f, start, end):
+    f.seek(start)
+    binary = f.read(2).decode()
+    assert (binary == '\0B')
+    nnet = f.read(13).decode()
+    assert (nnet == '<NnetExample>')
+    label = read_label(f)
+    feature_binary = f.read(end-f.tell()).split('<SpkInfo>')[0]
+    return label, feature_binary
+
+
+def read_ark_rand_binary(scp_path, ark_path):
+    egs_list = read_scp(scp_path)
+    feature_list = []
+    label_list = []
+    for info in egs_list:
+        f = open(ark_path)  # open(info['path'])
+        label, feature = read_block_binary(f, info['start'], info['end'])
+        feature_list.append(feature)
+        label_list.append(label)
+    return label_list, feature_list
+
+
+def read_compressed_mat_c_binary(binaries):
+    # Mapping for percentiles in col-headers
+    global_header = np.dtype(
+        [('minvalue', 'float32'), ('range', 'float32'), ('num_rows', 'int32'), ('num_cols', 'int32')])
+    globmin, globrange, rows, cols = np.frombuffer(binaries[0:16], dtype=global_header, count=1)[0]
+
+    col_headers = np.frombuffer(binaries[16:16+cols * 4 * 2], dtype=np.uint16, count=cols*4)
+    data = np.frombuffer(binaries[16+cols * 4 * 2:16+cols * 4 * 2+cols * rows], dtype=np.uint8, count=cols * rows)
+    m = Matrix(data, col_headers, globmin, globrange, rows)
+    mat = (ctypes.c_float*(cols*rows))()
+    # global decm_time
+    # t0 = time.time()
+    m.decompress(mat)
+    # t1 = time.time()
+    # decm_time += t1-t0
+    ans = np.reshape(np.array(mat), newshape=(cols, rows)).T
+    # print ans[0]
+    return ans  # transpose! col-major -> row-major
+
+
+def read_feature_binary(binaries):
+    header = binaries[0:14]
+    header = header.decode().strip()
+    assert(header == '<InputFrames>')
+    format = binaries[14:14+3].decode()
+    assert(format == 'CM ')
+    # Read compressed Matrix
+    feature = read_compressed_mat_c_binary(binaries[14+3:])
+    # feature = feature * scale + offset
+    return feature
 
 
 def read_ark_rand(scp_path, ark_path):
@@ -227,12 +271,17 @@ def read_ark_rand(scp_path, ark_path):
         feature, label = read_block(f, info['start'], info['end'])
         feature_list += expand_context(feature)
         label_list += label.tolist()
-    return feature_list, label_list
+    return label_list, feature_list
 
 
 if __name__ == '__main__':
-    ark_path = '../data/egs.1.ark'
-    scp_path = '../data/egs.1.scp'
+    ark_path = './data/ark/egs.1.ark'
+	scp_path = './data/scp/egs.1.scp'
+	# ark_path = '/home/snowboy/afs_data/qihu/xiaodu/ark/egs.1.ark'
+    # scp_path = '/home/snowboy/afs_data/qihu/xiaodu/scp/egs.1.scp'
+
+# -------------------------------------------------------------- #
+    # Random access
 
 #     t0 = time.time()
 #     scp_list = read_scp(scp_path)
@@ -251,25 +300,37 @@ if __name__ == '__main__':
 #         # break
 #     t2 = time.time()
 #     print t1 - t0, t2 - t1, decm_time
+# ---------------------------------------------------------------- #
+    # Read sequencially
 
-    g = read_ark_seq(ark_path)
-    id = 0
-    features = []
-    labels = []
-    decm_time = 0
+    # g = read_ark_seq(ark_path)
+    # id = 0
+    # features = []
+    # labels = []
+    # decm_time = 0
+    # t0 = time.time()
+    # for block in g:
+    #     features += expand_context(block[1])
+    #     labels += block[2].tolist()
+    #     # print block[0], block[2], block[1][0]
+    #     # break
+    #     if len(labels) >= 2048:
+    #         # break
+    #         features = []
+    #         exp_time = 0
+    #         labels = []
+    #     id += 1
+    #     print id
+    # print time.time()-t0
     t0 = time.time()
-    for block in g:
-        features += expand_context(block[1])
-        labels += block[2].tolist()
-        # print block[0], block[2], block[1][0]
-        # break
-        if len(labels) >= 2048:
-            # break
-            features = []
-            exp_time = 0
-            labels = []
+    label_list, feature_list = read_ark_rand_binary(scp_path, ark_path)
+    t1 = time.time()
+    print len(label_list), t1-t0
+    id = 0
+    for feature_binaries in feature_list:
+        feature = read_feature_binary(feature_binaries)
+        # print id
         id += 1
-        print id
-    print time.time()-t0
-
+    t2 = time.time()
+    print t2-t1
 

@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstdlib>
+#include <stdint.h>
 
 using namespace std;
 
@@ -21,7 +22,6 @@ void uint8_to_float_v2(const uint8_t* data, float * ans, float * col_header_flt,
             ans[k] = p75+(p100-p75)/63.*(value - 192);
         }
     }
-//    cout << '\t' << ans[0] << '\n';
 }
 
 class Matrix
@@ -36,7 +36,7 @@ class Matrix
         float globRange;
 
     public:
-        Matrix(const uint8_t * initDataFixed, uint16_t* initColHeaders, float initGlobMin, float initGlobRange);
+        Matrix(const uint8_t * initDataFixed, uint16_t* initColHeaders, float initGlobMin, float initGlobRange, int numRows);
         Matrix(fstream * file, int offset);
 
         ~Matrix(void);
@@ -44,14 +44,14 @@ class Matrix
 };
 
 
-Matrix::Matrix(const uint8_t * initDataFixed, uint16_t * initColHeaders, float initGlobMin, float initGlobRange)
+Matrix::Matrix(const uint8_t * initDataFixed, uint16_t * initColHeaders, float initGlobMin, float initGlobRange, int numRows)
 {
     dataFixed = initDataFixed;
     colHeaders = initColHeaders;
     globMin = initGlobMin;
     globRange = initGlobRange;
     cols = 40;
-    rows = 30;
+    rows = numRows;
     sizeHeader = 4;
 }
 
@@ -70,7 +70,6 @@ Matrix::~Matrix(void)
 
 void Matrix::decompress(float * dataFloat)
 {
-    // dataFloat = new float[cols*rows];
     for (int i = 0; i < cols; ++i) {
         float col_header_flt[sizeHeader];
         for (int j = 0; j < sizeHeader; ++j) {
@@ -83,8 +82,8 @@ void Matrix::decompress(float * dataFloat)
 
 extern "C"
 {
-    Matrix* Matrix_new(uint8_t * initDataFixed, uint16_t * initColHeaders, float initGlobMin, float initGlobRange)
-    {return new Matrix(initDataFixed, initColHeaders, initGlobMin, initGlobRange);}
+    Matrix* Matrix_new(uint8_t * initDataFixed, uint16_t * initColHeaders, float initGlobMin, float initGlobRange, int numRows)
+    {return new Matrix(initDataFixed, initColHeaders, initGlobMin, initGlobRange, numRows);}
 
     void Matrix_decompress(Matrix* mat, float * dataFloat) {mat->decompress(dataFloat);}
 
