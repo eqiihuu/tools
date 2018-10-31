@@ -1,5 +1,5 @@
 # tools
-My tools funtions
+My tool functions
 
 1. dict_excel.py: convert 1-level JSON-style (dictionary) file to excel
 2. file_io.py: file input & output
